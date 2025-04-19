@@ -1,0 +1,27 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Debug OpenGL",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/bin/${fileBasenameNoExtension}.exe", 
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [],
+        "externalConsole": true, 
+        "MIMode": "gdb", 
+        "preLaunchTask": "build", // 调试前自动编译（需与 tasks.json 的任务名一致）
+        "setupCommands": [
+          {
+            "description": "Enable pretty-printing for gdb",
+            "text": "-enable-pretty-printing",
+            "ignoreFailures": true
+          }
+        ],
+        "miDebuggerPath": "E:/mingw64/mingw64/bin/gdb.exe",
+      }
+    ]
+  }
+  
