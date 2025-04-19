@@ -7,6 +7,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <stb_image.h>
+#include "Camera.h"
 
 const unsigned int SCR_WIDTH=800;
 const unsigned int SCR_HEIGHT=600;
@@ -105,48 +106,68 @@ int main() {
     }
     stbi_image_free(data);
 
-    // 全局变量：精灵的动态属性
-    glm::vec3 spritePosition(0.3f, 0.3f, 0.0f); // 初始位置
-    float spriteRotation = 0.0f;                // 初始旋转角度
-    glm::vec3 spriteScale(0.5f, 0.5f, 1.0f);    // 初始缩放比例
+    // 调整摄像头缩放逻辑，确保动态适应小精灵的排列范围
+    float spriteWidth = static_cast<float>(width) / SCR_WIDTH; // 纹理宽度相对于屏幕宽度的比例
+    float spriteHeight = static_cast<float>(height) / SCR_HEIGHT; // 纹理高度相对于屏幕高度的比例
+
+    const int numSprites = 100; // 渲染100个小精灵
+    glm::mat4 instanceModels[numSprites];
+    for (int i = 0; i < numSprites; i++) {
+        float x = (i % 10) * spriteWidth * 0.5f - (spriteWidth * 2.5f); // 横向排列，间隔为纹理宽度的0.5倍
+        float y = (i / 10) * spriteHeight * 0.5f - (spriteHeight * 2.5f); // 纵向排列，间隔为纹理高度的0.5倍
+        instanceModels[i] = glm::translate(glm::mat4(1.0f), glm::vec3(x, y, 0.0f));
+    }
+
+    // 动态调整摄像头的初始缩放值
+    float maxSpriteWidth = spriteWidth * 0.5f * 10; // 横向排列的总宽度
+    float maxSpriteHeight = spriteHeight * 0.5f * 10; // 纵向排列的总高度
+    Camera camera(glm::vec3(0.0f, 0.0f, 0.0f), 1.0f); // 初始化摄像机
+    camera.adjustZoomToFit(maxSpriteWidth, maxSpriteHeight); // 调整摄像头缩放以适应小精灵范围
+
+    // 创建实例化缓冲区
+    unsigned int instanceVBO;
+    glGenBuffers(1, &instanceVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(instanceModels), &instanceModels[0], GL_STATIC_DRAW);
+
+    // 设置实例化属性
+    glBindVertexArray(VAO);
+    for (int i = 0; i < 4; i++) { // mat4 占用4个顶点属性位置
+        glEnableVertexAttribArray(2 + i);
+        glVertexAttribPointer(2 + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (void*)(i * sizeof(glm::vec4)));
+        glVertexAttribDivisor(2 + i, 1); // 每个实例更新一次
+    }
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
 
     // 渲染循环
-    Shader colorShader("color.vert", "color.frag");
     while (!glfwWindowShouldClose(window)) {
         // 清屏
-        glClearColor(1.0, 0.1, 1.0, 1.0f);
+        glClearColor(0.6, 0.8, 1.0, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
         shader.use();
-           // 处理键盘输入
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) spritePosition.y += 0.0001f; // 向上移动
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) spritePosition.y -= 0.0001f; // 向下移动
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) spritePosition.x -= 0.0001f; // 向左移动
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) spritePosition.x += 0.0001f; // 向右移动
-        if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) spriteRotation += 0.05f;  // 顺时针旋转
-        if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) spriteRotation -= 0.05f;  // 逆时针旋转
-        if (glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS) spriteScale *= 1.01f;     // 放大
-        if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS) spriteScale *= 0.99f;     // 缩小
+
+        // 摄像机：处理键盘输入
+        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) camera.move(glm::vec3(0.0f, 0.01f, 0.0f)); // 向上移动
+        if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) camera.move(glm::vec3(0.0f, -0.01f, 0.0f)); // 向下移动
+        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) camera.move(glm::vec3(-0.01f, 0.0f, 0.0f)); // 向左移动
+        if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) camera.move(glm::vec3(0.01f, 0.0f, 0.0f)); // 向右移动
+        if (glfwGetKey(window, GLFW_KEY_EQUAL) == GLFW_PRESS) camera.setZoom(camera.zoom * 0.99f); // 缩小视图
+        if (glfwGetKey(window, GLFW_KEY_MINUS) == GLFW_PRESS) camera.setZoom(camera.zoom * 1.01f); // 放大视图
 
         // 摄像机：正交投影
-        glm::mat4 projection = glm::ortho(-1.0f, 1.0f, -1.0f * SCR_HEIGHT / SCR_WIDTH, 1.0f * SCR_HEIGHT / SCR_WIDTH, -1.0f, 1.0f);
+        glm::mat4 projection = camera.getProjectionMatrix((float)SCR_WIDTH / SCR_HEIGHT);
         shader.setMat4("projection", glm::value_ptr(projection));
 
-        // 模型矩阵：旋转缩放
-        glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, spritePosition); // 平移
-        model = glm::rotate(model, spriteRotation, glm::vec3(0.0f, 0.0f, 1.0f)); // 旋转
-        model = glm::scale(model, spriteScale); // 缩放
-        shader.setMat4("model", glm::value_ptr(model));
-
+        // 绘制实例化小精灵
         glBindTexture(GL_TEXTURE_2D, texture);
         glBindVertexArray(VAO);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, numSprites);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
-
 
     // 清理资源
     glfwTerminate();
